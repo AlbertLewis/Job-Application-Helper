@@ -9,13 +9,20 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-SPREADSHEET_ID = "19bmBmZd-dQ8CGZg3O8gBbKMUMu8YmwrgNPQG43xkstc"
-SAMPLE_RANGE_NAME = "Class Data!A2:E"
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+# The ID and range of a sample spreadsheet.
+SAMPLE_SPREADSHEET_ID = "19bmBmZd-dQ8CGZg3O8gBbKMUMu8YmwrgNPQG43xkstc"
+SAMPLE_RANGE_NAME = "A2:A4"
+
+def add_job(job: dict):
+  pass
+
+
 
 def main():
-  """Shows basic usage of the Gmail API.
-  Lists the user's Gmail labels.
+  """Shows basic usage of the Sheets API.
+  Prints values from a sample spreadsheet.
   """
   creds = None
   # The file token.json stores the user's access and refresh tokens, and is
@@ -43,7 +50,7 @@ def main():
     sheet = service.spreadsheets()
     result = (
         sheet.values()
-        .get(spreadsheetId=SPREADSHEET_ID, range=SAMPLE_RANGE_NAME)
+        .get(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=SAMPLE_RANGE_NAME)
         .execute()
     )
     values = result.get("values", [])
@@ -55,36 +62,10 @@ def main():
     print("Name, Major:")
     for row in values:
       # Print columns A and E, which correspond to indices 0 and 4.
-      print(f"{row[0]}, {row[4]}")
+      print(row)
+    #   print(f"{row[0]}, {row[1]}")
   except HttpError as err:
     print(err)
-    
-    # # Call the Gmail API
-    # service = build("gmail", "v1", credentials=creds)
-    # results = service.users().labels().list(userId="me").execute()
-    # labels = results.get("labels", [])
-
-    # if not labels:
-    #   print("No labels found.")
-    #   return
-    # print("Labels:")
-    # for label in labels:
-    #   print(label)
-
-  # except HttpError as error:
-  #   # TODO(developer) - Handle errors from gmail API.
-  #   print(f"An error occurred: {error}")
-
 
 if __name__ == "__main__":
   main()
-
-# from simplegmail import Gmail
-# import googleapiclient
-# from google.auth.transport.requests import Request
-# from google.oauth2.credentials import Credentials
-# from google_auth_oauthlib.flow import InstalledAppFlow
-# from googleapiclient.discovery import build
-# from googleapiclient.errors import HttpError
-
-# gmail = Gmail()
