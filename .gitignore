@@ -1,2 +1,4 @@
 credentials.json
 token.json
+openai_key.json
+*.json
