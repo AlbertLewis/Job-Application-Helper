@@ -1,6 +1,7 @@
 #! /usr/bin/python3
 
 import os.path
+import json
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -12,13 +13,36 @@ from googleapiclient.errors import HttpError
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 # The ID and range of a sample spreadsheet.
-SAMPLE_SPREADSHEET_ID = "19bmBmZd-dQ8CGZg3O8gBbKMUMu8YmwrgNPQG43xkstc"
-SAMPLE_RANGE_NAME = "A2:A4"
+SPREADSHEET_ID = "19bmBmZd-dQ8CGZg3O8gBbKMUMu8YmwrgNPQG43xkstc"
+RANGE = "A2:A4"
+SHEET_NAME = "Sheet1"
 
-def add_job(job: dict):
-  pass
+def append_row(service, spreadsheet_id, sheet_name, json_data):
+    # Get column headers
+    range_name = f"{sheet_name}!1:1"  # Assuming headers are in the first row
+    result = service.spreadsheets().values().get(
+        spreadsheetId=spreadsheet_id,
+        range=range_name
+    ).execute()
+    headers = result.get('values', [[]])[0]
 
+    # Map JSON data to row values based on headers
+    row_values = [json_data.get(header, "") for header in headers]
 
+    # Append the row
+    body = {
+        "values": [row_values]
+    }
+    result = service.spreadsheets().values().append(
+        spreadsheetId=spreadsheet_id,
+        range=sheet_name,
+        valueInputOption="RAW",  # Use "USER_ENTERED" to process formulas
+        insertDataOption="INSERT_ROWS",
+        body=body
+    ).execute()
+    print(f"Appended row: {result}")
+
+json_data = json.load("app_info.json")
 
 def main():
   """Shows basic usage of the Sheets API.
@@ -45,12 +69,13 @@ def main():
 
   try:
     service = build("sheets", "v4", credentials=creds)
+    append_row(service, SPREADSHEET_ID, SHEET_NAME, json_data)
 
     # Call the Sheets API
     sheet = service.spreadsheets()
     result = (
         sheet.values()
-        .get(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=SAMPLE_RANGE_NAME)
+        .get(spreadsheetId=SPREADSHEET_ID, range=RANGE)
         .execute()
     )
     values = result.get("values", [])
@@ -69,3 +94,4 @@ def main():
 
 if __name__ == "__main__":
   main()
+  # add_job()
