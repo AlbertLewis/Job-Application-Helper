@@ -2,7 +2,8 @@
 
 import requests
 from pydantic import BaseModel
-from bs4 import BeautifulSoup # do i need to use?
+from selenium import webdriver
+from bs4 import BeautifulSoup
 from openai import OpenAI
 import json
 
@@ -26,35 +27,100 @@ class JobApplication(BaseModel):
     company: str
     job_title: str
     location: str
+    qualifications: list[str]
     salary: Salary
     notes: str
 
 def scrape_app(path) -> bool:
+    """_summary_
 
+    Args:
+        path (_type_): _description_
+
+    Returns:
+        bool: _description_
+    """
     try:
-        response = requests.get(path)
-        soup = BeautifulSoup(response.content, 'html.parser')
+        # response = requests.get(path)
 
-        for tag in soup.find_all(['script', 'form']):
-            tag.decompose()
+        # Get html using webdriver to make sure site scripts run
+        op = webdriver.ChromeOptions()
+        op.add_argument('headless')
+        driver = webdriver.Chrome(options=op)
+        driver.get(path)
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        driver.close()
 
-        completion = client.beta.chat.completions.parse(
-        model="gpt-4o-mini",
-        store=True,
-        messages=[
-            {"role": "system", "content": "Extract the job application information from the given html. Company can be the shortened version of the company name, the notes section can be 100-300 words long, for the salary that is identified, convert it to hourly and monthly if it is not provided"},
-            {"role": "user", "content": f"{soup}"},
-        ],
-        response_format=JobApplication,
-        )
+        with open("job_app.html", "w", encoding="utf-8") as file:
+            file.write(str(soup))
 
-        print(completion.choices[0].message.parsed)
+        # Get rid of unecessary HTML
+        for script in soup(["script", "style", "img", "meta", "link", "form"]):
+            script.decompose()
+        
+        # Adapted from https://stackoverflow.com/questions/328356/extracting-text-from-html-file-using-python
+        # get only the text
+        text = soup.get_text()
+
+        # break into lines and remove leading and trailing space on each
+        lines = (line.strip() for line in text.splitlines())
+        # break multi-headlines into a line each
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        # drop blank lines
+        text = '\n'.join(chunk for chunk in chunks if chunk)
+
+        # get rid of duplicate lines
+        unique_lines = set()
+        new_text = ""
+        for line in text.splitlines():
+            if line in unique_lines:
+                continue
+            new_text = new_text + line + "\n"
+            unique_lines.add(line)
+        text = new_text
+
+        with open("job_app_post_processed.html", "w", encoding="utf-8") as file:
+            file.write(text)
+        print(text)
+        
+        # test_html = ""
+        # with open("job_app_post_processed.html", 'r') as f:
+        #     test_html = f.read()
+        # job_info_json = call_chatgpt(test_html)
+        # print(job_info_json)
+        # with open("job_info.json", "w", encoding="utf-8") as file:
+        #     file.write(job_info_json.json)
         return True
-    except:
-        print("Error")
+    except Exception as e:
+        print(e)
         return False
 
 
+def call_chatgpt(content) -> json:
+    """_summary_
+
+    Args:
+        path (_type_): _description_
+
+    Returns:
+        json: the 
+    """
+
+    completion = client.beta.chat.completions.parse(
+    model="gpt-4o-mini",
+    store=True,
+    messages=[
+        {"role": "system", "content": """Extract the job application information from the given html. 
+         Company can be the shortened version of the company name, the notes section can be 100-300 words long. 
+         The qualifications are a list of the qualifications outlined in the job application. 
+         The salary can either be hourly, annually or monthly, do not create imaginary salaries"""},
+        {"role": "user", "content": f"{content}"},
+    ],
+    response_format=JobApplication,
+    )
+    response = completion.choices[0].message.parsed
+
+    return response.model_dump_json()
 
 # Try with chatgpt and with normal web scraping techniques
 # remove scripts and forms, and then pass into chatgpt
