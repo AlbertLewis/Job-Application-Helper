@@ -1,26 +1,30 @@
 #! /usr/bin/python3
 
-import requests
-from pydantic import BaseModel
 from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
+
 from openai import OpenAI
+from pydantic import BaseModel
 import json
 import tiktoken
 from datetime import date
+from sheets import main
 
 OPENAI_API_KEY = ""
-
-# for gpt-4o models
-ENCODING_NAME = "o200k_base"
-
 # switch to environment variable
 with open("openai_key.json") as openai_key_file:
     data = json.load(openai_key_file)
     OPENAI_API_KEY = data["key"]
-
 client = OpenAI(api_key=OPENAI_API_KEY)
     
+# for gpt-4o models
+ENCODING_NAME = "o200k_base"
+
+# Required json formats for chatgpt
 class Salary(BaseModel):
     min: int
     max: int
@@ -30,6 +34,7 @@ class Salary(BaseModel):
 
 class JobApplication(BaseModel):
     company: str
+    date_posted: str
     job_title: str
     location: str
     qualifications: list[str]
@@ -46,27 +51,41 @@ def scrape_app(path) -> bool:
         bool: _description_
     """
     try:
-        # response = requests.get(path)
-
         # Get html using webdriver to make sure site scripts run
         op = webdriver.ChromeOptions()
         op.add_argument('headless')
         driver = webdriver.Chrome(options=op)
         driver.get(path)
+
+        # Wait until scripts are fully loaded so text appears
+        try:
+            WebDriverWait(driver, 5).until(
+                lambda driver: driver.find_element(By.CSS_SELECTOR, "element_selector").text.strip() != "" # Wait until text is loaded
+            )
+        except TimeoutException:
+            print("No text appeared in the element within the timeout period.")
+
+        # Turn html source into soup object and close driver
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         driver.close()
-
-        with open("job_app.html", "w", encoding="utf-8") as file:
+        with open("job_app_raw.html", "w", encoding="utf-8") as file:
             file.write(str(soup))
 
-        # Get rid of unecessary HTML
-        for script in soup(["script", "style", "img", "meta", "link", "form"]):
-            script.decompose()
-        
-        # Adapted from https://stackoverflow.com/questions/328356/extracting-text-from-html-file-using-python
-        # get only the text
-        text = soup.get_text()
 
+        # IDEAS TODO
+        # If removing script tag results in a page that is super short, do not remove it?
+        # maybe generate a list of keywords associate with job search, and only keep lines with those key words>
+        # Or try all of these and pick the best one based on which one has the most information
+        # maybe let the entire soup go through if it is under the tokenizer limit without needing to parse out text
+        # Example job postings: https://wd3.myworkdaysite.com/en-US/recruiting/magna/Magna/job/Student---Engineering-ADAS-Algorithm--Summer-2025_R00164665
+        # Get rid of unecessary HTML TODO
+        # Remove any line with uncecessary tags "script", "img", etc.
+        for tag in soup(["script", "style", "img", "meta", "link", "form"]):
+            tag.decompose()
+        
+        # Get only the text        
+        # Adapted from https://stackoverflow.com/questions/328356/extracting-text-from-html-file-using-python
+        text = soup.get_text()
         # break into lines and remove leading and trailing space on each
         lines = (line.strip() for line in text.splitlines())
         # break multi-headlines into a line each
@@ -88,10 +107,13 @@ def scrape_app(path) -> bool:
             file.write(text)
         print(text)
 
-        num_tokens = evaluate_num_tokens(text, ENCODING_NAME)
+        num_tokens = evaluate_num_tokens(str(text), ENCODING_NAME)
         print(f"num tokens: {num_tokens}")
         if num_tokens > 5000:
             print("Too many tokens to call chatgpt")
+            return False
+        if num_tokens == 0:
+            print("No tokens generated, text may be empty")
             return False
 
         job_info_json = call_chatgpt(text)
@@ -104,6 +126,7 @@ def scrape_app(path) -> bool:
         with open("job_info.json", "w", encoding="utf-8") as file:
              json.dump(job_info_json, file)
         print(json.dumps(job_info_json))
+        main(job_info_json)
         return True
     except Exception as e:
         print(e)
@@ -130,7 +153,7 @@ def call_chatgpt(content) -> str:
         {"role": "system", "content": """Extract the job application information from the given html. 
          Company can be the shortened version of the company name, the notes section can be 100-300 words long. 
          The qualifications are a list of the qualifications outlined in the job application. 
-         If any data is missing, do not generate imaginary data."""},
+         If any data is missing, do not generate imaginary data, just leave the data entry blank."""},
         {"role": "user", "content": f"{content}"},
     ],
     response_format=JobApplication,
