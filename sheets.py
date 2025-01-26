@@ -57,6 +57,8 @@ def append_row(service, spreadsheet_id, sheet_name, json_data):
   ).execute()
   print(f"Appended row: {result}")
 
+  return True
+
 def main(json_data):
   """
   Gain access and append to google sheet
@@ -65,12 +67,15 @@ def main(json_data):
   if creds:
     try:
       service = build("sheets", "v4", credentials=creds)
-      append_row(service, SPREADSHEET_ID, SHEET_NAME, json_data)
+      if append_row(service, SPREADSHEET_ID, SHEET_NAME, json_data):
+        return True
+
     except HttpError as err:
       print(err)
 
   else:
     print("Can not find credentials--make sure token.json exists")
+    return False
 
 def check_credentials():
   """
