@@ -2,6 +2,7 @@
 
 import os.path
 import json
+from datetime import date
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -18,35 +19,62 @@ RANGE = "A2:A4"
 SHEET_NAME = "Sheet1"
 
 def append_row(service, spreadsheet_id, sheet_name, json_data):
-    # Get column headers
-    range_name = f"{sheet_name}!1:1"  # Assuming headers are in the first row
-    result = service.spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id,
-        range=range_name
-    ).execute()
-    headers = result.get('values', [[]])[0]
+  """
+  Appends a row to the google sheet
 
-    # Map JSON data to row values based on headers
-    row_values = [json_data.get(header, "") for header in headers]
+  Args:
+      service (_type_): _description_
+      spreadsheet_id (_type_): _description_
+      sheet_name (_type_): _description_
+      json_data (_type_): _description_
+  """
+  # Map JSON data to row values TODO
 
-    # Append the row
-    body = {
-        "values": [row_values]
-    }
-    result = service.spreadsheets().values().append(
-        spreadsheetId=spreadsheet_id,
-        range=sheet_name,
-        valueInputOption="RAW",  # Use "USER_ENTERED" to process formulas
-        insertDataOption="INSERT_ROWS",
-        body=body
-    ).execute()
-    print(f"Appended row: {result}")
+  row_values = [json_data["date"],
+    json_data["company"],
+    json_data["job_title"],
+    json_data["location"],
+    json_data["posting"], # replace with actual site
+    json_data["salary"]["annually"], # format salary in a better way
+    "", # figure out how to modify status dropdown through api
+    json_data["notes"]
+  ]
 
-json_data = json.load("app_info.json")
+  # Create payload TODO format correctly with google sheets formats e.g. stringValue
+  body = {
+      "values": [row_values]
+  }
+  print(body)
 
-def main():
-  """Shows basic usage of the Sheets API.
-  Prints values from a sample spreadsheet.
+
+  # Append the row
+  result = service.spreadsheets().values().append(
+      spreadsheetId=spreadsheet_id,
+      range=sheet_name,
+      valueInputOption="RAW",  # Use "USER_ENTERED" to process formulas
+      insertDataOption="INSERT_ROWS",
+      body=body
+  ).execute()
+  print(f"Appended row: {result}")
+
+def main(json_data):
+  """
+  Gain access and append to google sheet
+  """
+  creds = check_credentials()
+  if creds:
+    try:
+      service = build("sheets", "v4", credentials=creds)
+      append_row(service, SPREADSHEET_ID, SHEET_NAME, json_data)
+    except HttpError as err:
+      print(err)
+
+  else:
+    print("Can not find credentials--make sure token.json exists")
+
+def check_credentials():
+  """
+  Verifies that we have a token.json file that holds the user's google drive access token
   """
   creds = None
   # The file token.json stores the user's access and refresh tokens, and is
@@ -66,32 +94,11 @@ def main():
     # Save the credentials for the next run
     with open("token.json", "w") as token:
       token.write(creds.to_json())
-
-  try:
-    service = build("sheets", "v4", credentials=creds)
-    append_row(service, SPREADSHEET_ID, SHEET_NAME, json_data)
-
-    # Call the Sheets API
-    sheet = service.spreadsheets()
-    result = (
-        sheet.values()
-        .get(spreadsheetId=SPREADSHEET_ID, range=RANGE)
-        .execute()
-    )
-    values = result.get("values", [])
-
-    if not values:
-      print("No data found.")
-      return
-
-    print("Name, Major:")
-    for row in values:
-      # Print columns A and E, which correspond to indices 0 and 4.
-      print(row)
-    #   print(f"{row[0]}, {row[1]}")
-  except HttpError as err:
-    print(err)
+    
+  return creds
 
 if __name__ == "__main__":
-  main()
-  # add_job()
+  json_data = ""
+  with open("job_info.json") as f:
+    json_data = json.load(f)
+  main(json_data)
