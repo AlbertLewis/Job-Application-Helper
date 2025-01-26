@@ -6,10 +6,15 @@ from selenium import webdriver
 from bs4 import BeautifulSoup
 from openai import OpenAI
 import json
-
+import tiktoken
+from datetime import date
 
 OPENAI_API_KEY = ""
 
+# for gpt-4o models
+ENCODING_NAME = "o200k_base"
+
+# switch to environment variable
 with open("openai_key.json") as openai_key_file:
     data = json.load(openai_key_file)
     OPENAI_API_KEY = data["key"]
@@ -82,28 +87,40 @@ def scrape_app(path) -> bool:
         with open("job_app_post_processed.html", "w", encoding="utf-8") as file:
             file.write(text)
         print(text)
-        
-        # test_html = ""
-        # with open("job_app_post_processed.html", 'r') as f:
-        #     test_html = f.read()
-        # job_info_json = call_chatgpt(test_html)
-        # print(job_info_json)
-        # with open("job_info.json", "w", encoding="utf-8") as file:
-        #     file.write(job_info_json.json)
+
+        num_tokens = evaluate_num_tokens(text, ENCODING_NAME)
+        print(f"num tokens: {num_tokens}")
+        if num_tokens > 5000:
+            print("Too many tokens to call chatgpt")
+            return False
+
+        job_info_json = call_chatgpt(text)
+
+        # Manually iput fields like date and link
+        today = date.today()
+        job_info_json["date"] = today.strftime("%m/%d/%Y")
+        job_info_json["posting"] = path
+
+        with open("job_info.json", "w", encoding="utf-8") as file:
+             json.dump(job_info_json, file)
+        print(json.dumps(job_info_json))
         return True
     except Exception as e:
         print(e)
         return False
 
+def evaluate_num_tokens(text : str, encoding : str) -> int:
+    encoding = tiktoken.get_encoding(encoding)
+    return len(encoding.encode(text))
 
-def call_chatgpt(content) -> json:
+def call_chatgpt(content) -> str:
     """_summary_
 
     Args:
         path (_type_): _description_
 
     Returns:
-        json: the 
+        str:
     """
 
     completion = client.beta.chat.completions.parse(
@@ -113,14 +130,13 @@ def call_chatgpt(content) -> json:
         {"role": "system", "content": """Extract the job application information from the given html. 
          Company can be the shortened version of the company name, the notes section can be 100-300 words long. 
          The qualifications are a list of the qualifications outlined in the job application. 
-         The salary can either be hourly, annually or monthly, do not create imaginary salaries"""},
+         If any data is missing, do not generate imaginary data."""},
         {"role": "user", "content": f"{content}"},
     ],
     response_format=JobApplication,
     )
     response = completion.choices[0].message.parsed
-
-    return response.model_dump_json()
+    return json.loads(response.model_dump_json())
 
 # Try with chatgpt and with normal web scraping techniques
 # remove scripts and forms, and then pass into chatgpt
